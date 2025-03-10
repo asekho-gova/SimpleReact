@@ -1,0 +1,277 @@
+name: SimpleReact CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  FRONTEND_IMAGE_NAME: ${{ github.repository }}-frontend
+  BACKEND_IMAGE_NAME: ${{ github.repository }}-backend
+
+jobs:
+  lint:
+    name: Lint Code
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Frontend linting
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: Frontend/simple-react-app/package-lock.json
+
+      - name: Install frontend dependencies
+        run: |
+          cd Frontend/simple-react-app
+          npm ci
+
+      - name: Lint frontend
+        run: |
+          cd Frontend/simple-react-app
+          npm run lint
+
+      # Backend linting
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore backend dependencies
+        run: |
+          cd Backend/SimpleReact.API
+          dotnet restore
+
+      - name: Lint backend
+        run: |
+          cd Backend/SimpleReact.API
+          dotnet format --verify-no-changes
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Frontend security scan
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: Frontend/simple-react-app/package-lock.json
+
+      - name: Install frontend dependencies
+        run: |
+          cd Frontend/simple-react-app
+          npm ci
+
+      - name: Run npm audit
+        run: |
+          cd Frontend/simple-react-app
+          npm audit --production
+
+      # Backend security scan
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Run .NET security scan
+        uses: microsoft/security-devops-action@v1
+        with:
+          tools: 'credscan,eslint,trivy'
+          categories: 'code,container'
+          policy: 'warn'
+
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    needs: [lint, security-scan]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Frontend build and test
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: Frontend/simple-react-app/package-lock.json
+
+      - name: Install frontend dependencies
+        run: |
+          cd Frontend/simple-react-app
+          npm ci
+
+      - name: Build frontend
+        run: |
+          cd Frontend/simple-react-app
+          npm run build
+
+      # Backend build and test
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore backend dependencies
+        run: |
+          cd Backend/SimpleReact.API
+          dotnet restore
+
+      - name: Build backend
+        run: |
+          cd Backend/SimpleReact.API
+          dotnet build --no-restore
+
+      - name: Test backend
+        run: |
+          cd Backend/SimpleReact.API
+          dotnet test --no-build --verbosity normal
+
+  build-docker-images:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: [build-and-test]
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for frontend
+        id: meta-frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=sha,format=long
+
+      - name: Extract metadata for backend
+        id: meta-backend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=sha,format=long
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./Frontend/simple-react-app
+          push: true
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./Backend/SimpleReact.API
+          push: true
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
+
+  deploy-dev:
+    name: Deploy to Development
+    runs-on: ubuntu-latest
+    needs: [build-docker-images]
+    if: github.ref == 'refs/heads/develop'
+    environment: development
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'latest'
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Configure Kubernetes context
+        uses: azure/k8s-set-context@v3
+        with:
+          kubeconfig: ${{ secrets.KUBE_CONFIG_DEV }}
+
+      - name: Deploy to Kubernetes
+        run: |
+          cd helm-charts
+          helm dependency update
+          helm upgrade --install simplereact . \
+            --namespace simplereact-dev \
+            --create-namespace \
+            --set frontend.image.repository=${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }} \
+            --set frontend.image.tag=${{ github.sha }} \
+            --set backend.image.repository=${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }} \
+            --set backend.image.tag=${{ github.sha }} \
+            --set backend.secrets.jwtKey=${{ secrets.JWT_KEY }} \
+            --set backend.secrets.connectionString=${{ secrets.DB_CONNECTION_STRING }}
+
+  deploy-prod:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [build-docker-images]
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: https://simplereact.example.com
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'latest'
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Configure Kubernetes context
+        uses: azure/k8s-set-context@v3
+        with:
+          kubeconfig: ${{ secrets.KUBE_CONFIG_PROD }}
+
+      - name: Deploy to Kubernetes
+        run: |
+          cd helm-charts
+          helm dependency update
+          helm upgrade --install simplereact . \
+            --namespace simplereact-prod \
+            --create-namespace \
+            --set frontend.image.repository=${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }} \
+            --set frontend.image.tag=${{ github.sha }} \
+            --set backend.image.repository=${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }} \
+            --set backend.image.tag=${{ github.sha }} \
+            --set backend.secrets.jwtKey=${{ secrets.JWT_KEY }} \
+            --set backend.secrets.connectionString=${{ secrets.DB_CONNECTION_STRING }}

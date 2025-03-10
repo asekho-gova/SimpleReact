@@ -1,0 +1,17 @@
+apiVersion: v2
+name: simplereact
+description: A Helm chart for SimpleReact Application
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+
+dependencies:
+  - name: simplereact-frontend
+    version: 0.1.0
+    repository: file://frontend
+  - name: simplereact-backend
+    version: 0.1.0
+    repository: file://backend
+  - name: simplereact-observability
+    version: 0.1.0
+    repository: file://observability

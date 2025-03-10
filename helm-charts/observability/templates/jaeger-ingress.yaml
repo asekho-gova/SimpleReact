@@ -1,0 +1,33 @@
+{{- if and .Values.jaeger.enabled .Values.jaeger.ingress.enabled -}}
+{{- $fullName := printf "%s-jaeger" (include "simplereact-observability.fullname" .) -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullName }}
+  labels:
+    {{- include "simplereact-observability.labels" . | nindent 4 }}
+    app.kubernetes.io/component: jaeger
+  {{- with .Values.jaeger.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.jaeger.ingress.className }}
+  ingressClassName: {{ .Values.jaeger.ingress.className }}
+  {{- end }}
+  rules:
+    {{- range .Values.jaeger.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ $fullName }}
+                port:
+                  name: ui
+          {{- end }}
+    {{- end }}
+{{- end }}

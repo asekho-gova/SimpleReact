@@ -1,0 +1,36 @@
+{{- if .Values.kibana.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "simplereact-observability.fullname" . }}-kibana
+  labels:
+    {{- include "simplereact-observability.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kibana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "simplereact-observability.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: kibana
+  template:
+    metadata:
+      labels:
+        {{- include "simplereact-observability.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: kibana
+    spec:
+      containers:
+        - name: kibana
+          image: "{{ .Values.kibana.image.repository }}:{{ .Values.kibana.image.tag }}"
+          imagePullPolicy: {{ .Values.kibana.image.pullPolicy }}
+          env:
+            {{- range $key, $value := .Values.kibana.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: 5601
+              protocol: TCP
+          resources:
+            {{- toYaml .Values.kibana.resources | nindent 12 }}
+{{- end }}

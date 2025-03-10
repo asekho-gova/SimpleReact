@@ -1,0 +1,98 @@
+# Default values for simplereact-observability
+jaeger:
+  enabled: true
+  image:
+    repository: jaegertracing/all-in-one
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    ports:
+      - name: agent-compact
+        port: 6831
+        protocol: UDP
+      - name: agent-binary
+        port: 6832
+        protocol: UDP
+      - name: agent-configs
+        port: 5778
+      - name: ui
+        port: 16686
+      - name: collector
+        port: 14268
+      - name: collector-proto
+        port: 14250
+      - name: zipkin
+        port: 9411
+  ingress:
+    enabled: true
+    className: "nginx"
+    annotations:
+      kubernetes.io/ingress.class: nginx
+      nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    hosts:
+      - host: jaeger.simplereact.local
+        paths:
+          - path: /
+            pathType: Prefix
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+elasticsearch:
+  enabled: false
+  image:
+    repository: docker.elastic.co/elasticsearch/elasticsearch
+    tag: 7.17.0
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 9200
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 500m
+      memory: 512Mi
+  env:
+    discovery.type: single-node
+    xpack.security.enabled: "false"
+    ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+  persistence:
+    enabled: true
+    size: 10Gi
+
+kibana:
+  enabled: false
+  image:
+    repository: docker.elastic.co/kibana/kibana
+    tag: 7.17.0
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 5601
+  ingress:
+    enabled: true
+    className: "nginx"
+    annotations:
+      kubernetes.io/ingress.class: nginx
+      nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    hosts:
+      - host: kibana.simplereact.local
+        paths:
+          - path: /
+            pathType: Prefix
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  env:
+    ELASTICSEARCH_HOSTS: http://simplereact-observability-elasticsearch:9200

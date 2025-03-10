@@ -1,0 +1,33 @@
+{{- if and .Values.kibana.enabled .Values.kibana.ingress.enabled -}}
+{{- $fullName := printf "%s-kibana" (include "simplereact-observability.fullname" .) -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullName }}
+  labels:
+    {{- include "simplereact-observability.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kibana
+  {{- with .Values.kibana.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.kibana.ingress.className }}
+  ingressClassName: {{ .Values.kibana.ingress.className }}
+  {{- end }}
+  rules:
+    {{- range .Values.kibana.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ $fullName }}
+                port:
+                  name: http
+          {{- end }}
+    {{- end }}
+{{- end }}

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: simplereact-observability
+description: A Helm chart for SimpleReact Observability (Jaeger/Elasticsearch/Kibana)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

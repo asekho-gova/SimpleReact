@@ -1,0 +1,38 @@
+{{- if .Values.jaeger.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "simplereact-observability.fullname" . }}-jaeger
+  labels:
+    {{- include "simplereact-observability.labels" . | nindent 4 }}
+    app.kubernetes.io/component: jaeger
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "simplereact-observability.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: jaeger
+  template:
+    metadata:
+      labels:
+        {{- include "simplereact-observability.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: jaeger
+    spec:
+      containers:
+        - name: jaeger
+          image: "{{ .Values.jaeger.image.repository }}:{{ .Values.jaeger.image.tag }}"
+          imagePullPolicy: {{ .Values.jaeger.image.pullPolicy }}
+          env:
+            - name: COLLECTOR_ZIPKIN_HOST_PORT
+              value: ":9411"
+            - name: COLLECTOR_OTLP_ENABLED
+              value: "true"
+          ports:
+            {{- range .Values.jaeger.service.ports }}
+            - name: {{ .name }}
+              containerPort: {{ .port }}
+              protocol: {{ .protocol | default "TCP" }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.jaeger.resources | nindent 12 }}
+{{- end }}

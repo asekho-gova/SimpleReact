@@ -1,0 +1,19 @@
+{{- if .Values.elasticsearch.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "simplereact-observability.fullname" . }}-elasticsearch
+  labels:
+    {{- include "simplereact-observability.labels" . | nindent 4 }}
+    app.kubernetes.io/component: elasticsearch
+spec:
+  type: {{ .Values.elasticsearch.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.elasticsearch.service.port }}
+      protocol: TCP
+      targetPort: http
+  selector:
+    {{- include "simplereact-observability.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: elasticsearch
+{{- end }}
